@@ -21,12 +21,6 @@ def create_app(config_class=Config):
     jwt.init_app(app)
 
     api = Api(app)
-    
-    # Configure JWT in OpenAPI
-    api.spec.components.security_scheme(
-        "bearerAuth", {"type": "http", "scheme": "bearer", "bearerFormat": "JWT"}
-    )
-    api.spec.options["security"] = [{"bearerAuth": []}]
 
     from app.routes.users import users_bp
     from app.routes.todos import todos_bp
