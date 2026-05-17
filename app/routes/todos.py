@@ -15,13 +15,15 @@ class TodoQueryArgsSchema(Schema):
     sort = fields.String(load_default='created_at')
     order = fields.String(load_default='desc')
     extend = fields.String()
+    page = fields.Integer(load_default=1)
+    page_size = fields.Integer(load_default=10)
 
 @todos_bp.route('')
 class Todos(MethodView):
     @todos_bp.arguments(TodoQueryArgsSchema, location='query')
     @todos_bp.response(200, TodoSchema(many=True))
     def get(self, query_args):
-        """List all todos"""
+        """List all todos with filtering, sorting, and pagination"""
         query = Todo.query
         
         user_id = query_args.get('user_id')
@@ -29,6 +31,8 @@ class Todos(MethodView):
         sort = query_args.get('sort')
         order = query_args.get('order')
         extend = query_args.get('extend')
+        page = query_args.get('page')
+        page_size = query_args.get('page_size')
 
         if user_id:
             query = query.filter_by(user_id=user_id)
@@ -47,12 +51,20 @@ class Todos(MethodView):
             else:
                 query = query.order_by(column.asc())
 
-        todos = query.all()
+        pagination = query.paginate(page=page, per_page=page_size, error_out=False)
+        todos = pagination.items
+        
+        headers = {
+            "X-Total-Count": pagination.total,
+            "X-Total-Pages": pagination.pages,
+            "X-Current-Page": pagination.page
+        }
         
         if extend == 'author':
-            return todos
+            return todos, 200, headers
             
-        return jsonify(TodoNoAuthorSchema(many=True).dump(todos))
+        response_data = TodoNoAuthorSchema(many=True).dump(todos)
+        return jsonify(response_data), 200, headers
 
     @todos_bp.arguments(TodoSchema)
     @todos_bp.response(201, TodoNoAuthorSchema)

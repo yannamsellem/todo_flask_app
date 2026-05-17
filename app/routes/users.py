@@ -12,15 +12,20 @@ users_bp = Blueprint('users', __name__, url_prefix='/api/users', description='Op
 class UserQueryArgsSchema(Schema):
     username = fields.String()
     extend = fields.String()
+    page = fields.Integer(load_default=1)
+    page_size = fields.Integer(load_default=10)
 
 @users_bp.route('')
 class Users(MethodView):
     @users_bp.arguments(UserQueryArgsSchema, location='query')
     @users_bp.response(200, UserSchema(many=True))
     def get(self, query_args):
-        """List all users"""
+        """List all users with pagination"""
         username = query_args.get('username')
         extend = query_args.get('extend')
+        page = query_args.get('page')
+        page_size = query_args.get('page_size')
+        
         query = User.query
         
         if username:
@@ -29,12 +34,22 @@ class Users(MethodView):
         if extend == 'todos':
             query = query.options(selectinload(User.todos))
         
-        users = query.all()
+        pagination = query.paginate(page=page, per_page=page_size, error_out=False)
+        users = pagination.items
+        
+        # Add pagination headers (Standard REST practice)
+        headers = {
+            "X-Total-Count": pagination.total,
+            "X-Total-Pages": pagination.pages,
+            "X-Current-Page": pagination.page
+        }
         
         if extend == 'todos':
-            return users
+            return users, 200, headers
         
-        return jsonify(UserNoTodosSchema(many=True).dump(users))
+        # Manually dump for non-extended response to exclude 'todos'
+        response_data = UserNoTodosSchema(many=True).dump(users)
+        return jsonify(response_data), 200, headers
 
     @users_bp.arguments(UserSchema)
     @users_bp.response(201, UserNoTodosSchema)
