@@ -1,106 +1,101 @@
-from flask import Blueprint, request, jsonify
+from flask.views import MethodView
+from flask_smorest import Blueprint, abort
 from app import db
 from app.models import Todo, User
-from app.schemas import todo_schema, todos_schema, TodoSchema
-from marshmallow import ValidationError
+from app.schemas import TodoSchema, TodoNoAuthorSchema
 from sqlalchemy.orm import joinedload
+from marshmallow import Schema, fields
+from flask import jsonify
 
-todos_bp = Blueprint('todos', __name__)
+todos_bp = Blueprint('todos', __name__, url_prefix='/api/todos', description='Operations on todos')
 
-@todos_bp.route('', methods=['GET'])
-def get_todos():
-    query = Todo.query
-    
-    # Query parameters
-    user_id = request.args.get('user_id', type=int)
-    completed = request.args.get('completed')
-    sort = request.args.get('sort', 'created_at')
-    order = request.args.get('order', 'desc')
-    extend = request.args.get('extend')
+class TodoQueryArgsSchema(Schema):
+    user_id = fields.Integer()
+    completed = fields.String()
+    sort = fields.String(load_default='created_at')
+    order = fields.String(load_default='desc')
+    extend = fields.String()
 
-    if user_id:
-        query = query.filter_by(user_id=user_id)
-    
-    if completed is not None:
-        is_completed = completed.lower() == 'true'
-        query = query.filter_by(completed=is_completed)
-
-    # Performance optimization if extending
-    if extend == 'author':
-        query = query.options(joinedload(Todo.author))
-
-    # Sorting
-    if hasattr(Todo, sort):
-        column = getattr(Todo, sort)
-        if order == 'desc':
-            query = query.order_by(column.desc())
-        else:
-            query = query.order_by(column.asc())
-
-    todos = query.all()
-    
-    # Dynamic schema modification based on extend param
-    if extend == 'author':
-        result = todos_schema.dump(todos)
-    else:
-        # Default behavior: exclude author
-        result = TodoSchema(many=True, exclude=('author',)).dump(todos)
+@todos_bp.route('')
+class Todos(MethodView):
+    @todos_bp.arguments(TodoQueryArgsSchema, location='query')
+    @todos_bp.response(200, TodoSchema(many=True))
+    def get(self, query_args):
+        """List all todos"""
+        query = Todo.query
         
-    return jsonify(result), 200
+        user_id = query_args.get('user_id')
+        completed = query_args.get('completed')
+        sort = query_args.get('sort')
+        order = query_args.get('order')
+        extend = query_args.get('extend')
 
-@todos_bp.route('/<int:id>', methods=['GET'])
-def get_todo(id):
-    extend = request.args.get('extend')
-    query = Todo.query
-    if extend == 'author':
-        query = query.options(joinedload(Todo.author))
-    
-    todo = query.filter_by(id=id).first_or_404()
-    
-    if extend == 'author':
-        result = todo_schema.dump(todo)
-    else:
-        result = TodoSchema(exclude=('author',)).dump(todo)
+        if user_id:
+            query = query.filter_by(user_id=user_id)
         
-    return jsonify(result), 200
+        if completed is not None:
+            is_completed = completed.lower() == 'true'
+            query = query.filter_by(completed=is_completed)
 
-@todos_bp.route('', methods=['POST'])
-def create_todo():
-    json_data = request.get_json()
-    if not json_data:
-        return jsonify({"message": "No input data provided"}), 400
-    
-    # Ensure user exists
-    user_id = json_data.get('user_id')
-    if not user_id or not db.session.get(User, user_id):
-        return jsonify({"message": "Valid user_id is required"}), 400
+        if extend == 'author':
+            query = query.options(joinedload(Todo.author))
 
-    try:
-        todo = todo_schema.load(json_data)
-    except ValidationError as err:
-        return jsonify(err.messages), 422
-    
-    db.session.add(todo)
-    db.session.commit()
-    return jsonify(TodoSchema(exclude=('author',)).dump(todo)), 201
+        if hasattr(Todo, sort):
+            column = getattr(Todo, sort)
+            if order == 'desc':
+                query = query.order_by(column.desc())
+            else:
+                query = query.order_by(column.asc())
 
-@todos_bp.route('/<int:id>', methods=['PUT'])
-def update_todo(id):
-    todo = db.get_or_404(Todo, id)
-    json_data = request.get_json()
-    if not json_data:
-        return jsonify({"message": "No input data provided"}), 400
-    try:
-        updated_todo = todo_schema.load(json_data, instance=todo, partial=True)
-    except ValidationError as err:
-        return jsonify(err.messages), 422
-    
-    db.session.commit()
-    return jsonify(TodoSchema(exclude=('author',)).dump(updated_todo)), 200
+        todos = query.all()
+        
+        if extend == 'author':
+            return todos
+            
+        return jsonify(TodoNoAuthorSchema(many=True).dump(todos))
 
-@todos_bp.route('/<int:id>', methods=['DELETE'])
-def delete_todo(id):
-    todo = db.get_or_404(Todo, id)
-    db.session.delete(todo)
-    db.session.commit()
-    return jsonify({"message": "Todo deleted"}), 204
+    @todos_bp.arguments(TodoSchema)
+    @todos_bp.response(201, TodoNoAuthorSchema)
+    def post(self, new_todo):
+        """Create a new todo"""
+        if not db.session.get(User, new_todo.user_id):
+            abort(400, message="Valid user_id is required")
+            
+        db.session.add(new_todo)
+        db.session.commit()
+        return new_todo
+
+@todos_bp.route('/<int:id>')
+class TodoById(MethodView):
+    @todos_bp.arguments(TodoQueryArgsSchema, location='query')
+    @todos_bp.response(200, TodoSchema)
+    def get(self, query_args, id):
+        """Get todo by ID"""
+        extend = query_args.get('extend')
+        query = Todo.query
+        if extend == 'author':
+            query = query.options(joinedload(Todo.author))
+        
+        todo = query.filter_by(id=id).first_or_404()
+        
+        if extend == 'author':
+            return todo
+            
+        return jsonify(TodoNoAuthorSchema().dump(todo))
+
+    @todos_bp.arguments(TodoSchema(partial=True, load_instance=False))
+    @todos_bp.response(200, TodoNoAuthorSchema)
+    def put(self, data, id):
+        """Update todo by ID"""
+        todo = db.get_or_404(Todo, id)
+        for key, value in data.items():
+            setattr(todo, key, value)
+        db.session.commit()
+        return todo
+
+    @todos_bp.response(204)
+    def delete(self, id):
+        """Delete todo by ID"""
+        todo = db.get_or_404(Todo, id)
+        db.session.delete(todo)
+        db.session.commit()
