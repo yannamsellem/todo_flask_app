@@ -1,5 +1,6 @@
 from flask.views import MethodView
 from flask_smorest import Blueprint, abort
+from flask_jwt_extended import jwt_required, get_jwt_identity
 from app import db
 from app.models import User
 from app.schemas import UserSchema, UserNoTodosSchema
@@ -19,6 +20,7 @@ class UserQueryArgsSchema(Schema):
 class Users(MethodView):
     @users_bp.arguments(UserQueryArgsSchema, location='query')
     @users_bp.response(200, UserSchema(many=True))
+    @jwt_required()
     def get(self, query_args):
         """List all users with pagination"""
         username = query_args.get('username')
@@ -37,7 +39,6 @@ class Users(MethodView):
         pagination = query.paginate(page=page, per_page=page_size, error_out=False)
         users = pagination.items
         
-        # Add pagination headers (Standard REST practice)
         headers = {
             "X-Total-Count": pagination.total,
             "X-Total-Pages": pagination.pages,
@@ -47,22 +48,14 @@ class Users(MethodView):
         if extend == 'todos':
             return users, 200, headers
         
-        # Manually dump for non-extended response to exclude 'todos'
         response_data = UserNoTodosSchema(many=True).dump(users)
         return jsonify(response_data), 200, headers
-
-    @users_bp.arguments(UserSchema)
-    @users_bp.response(201, UserNoTodosSchema)
-    def post(self, new_user):
-        """Create a new user"""
-        db.session.add(new_user)
-        db.session.commit()
-        return new_user
 
 @users_bp.route('/<int:id>')
 class UserById(MethodView):
     @users_bp.arguments(UserQueryArgsSchema, location='query')
     @users_bp.response(200, UserSchema)
+    @jwt_required()
     def get(self, query_args, id):
         """Get user by ID"""
         extend = query_args.get('extend')
@@ -79,17 +72,31 @@ class UserById(MethodView):
 
     @users_bp.arguments(UserSchema(partial=True, load_instance=False))
     @users_bp.response(200, UserNoTodosSchema)
+    @jwt_required()
     def put(self, data, id):
         """Update user by ID"""
+        current_user_id = int(get_jwt_identity())
+        if current_user_id != id:
+            abort(403, message="You can only update your own profile")
+            
         user = db.get_or_404(User, id)
+        
+        if 'password' in data:
+            user.set_password(data.pop('password'))
+            
         for key, value in data.items():
             setattr(user, key, value)
         db.session.commit()
         return user
 
     @users_bp.response(204)
+    @jwt_required()
     def delete(self, id):
         """Delete user by ID"""
+        current_user_id = int(get_jwt_identity())
+        if current_user_id != id:
+            abort(403, message="You can only delete your own profile")
+            
         user = db.get_or_404(User, id)
         db.session.delete(user)
         db.session.commit()

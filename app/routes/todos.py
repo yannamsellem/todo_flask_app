@@ -1,5 +1,6 @@
 from flask.views import MethodView
 from flask_smorest import Blueprint, abort
+from flask_jwt_extended import jwt_required, get_jwt_identity
 from app import db
 from app.models import Todo, User
 from app.schemas import TodoSchema, TodoNoAuthorSchema
@@ -22,9 +23,11 @@ class TodoQueryArgsSchema(Schema):
 class Todos(MethodView):
     @todos_bp.arguments(TodoQueryArgsSchema, location='query')
     @todos_bp.response(200, TodoSchema(many=True))
+    @jwt_required()
     def get(self, query_args):
         """List all todos with filtering, sorting, and pagination"""
-        query = Todo.query
+        current_user_id = int(get_jwt_identity())
+        query = Todo.query.filter_by(user_id=current_user_id)
         
         user_id = query_args.get('user_id')
         completed = query_args.get('completed')
@@ -68,10 +71,11 @@ class Todos(MethodView):
 
     @todos_bp.arguments(TodoSchema)
     @todos_bp.response(201, TodoNoAuthorSchema)
+    @jwt_required()
     def post(self, new_todo):
-        """Create a new todo"""
-        if not db.session.get(User, new_todo.user_id):
-            abort(400, message="Valid user_id is required")
+        """Create a new todo for the current user"""
+        current_user_id = int(get_jwt_identity())
+        new_todo.user_id = current_user_id
             
         db.session.add(new_todo)
         db.session.commit()
@@ -81,15 +85,18 @@ class Todos(MethodView):
 class TodoById(MethodView):
     @todos_bp.arguments(TodoQueryArgsSchema, location='query')
     @todos_bp.response(200, TodoSchema)
+    @jwt_required()
     def get(self, query_args, id):
         """Get todo by ID"""
+        current_user_id = int(get_jwt_identity())
         extend = query_args.get('extend')
-        query = Todo.query
+        query = Todo.query.filter_by(id=id, user_id=current_user_id)
+        
         if extend == 'author':
             query = query.options(joinedload(Todo.author))
         
-        todo = query.filter_by(id=id).first_or_404()
-        
+        todo = query.first_or_404()
+            
         if extend == 'author':
             return todo
             
@@ -97,17 +104,21 @@ class TodoById(MethodView):
 
     @todos_bp.arguments(TodoSchema(partial=True, load_instance=False))
     @todos_bp.response(200, TodoNoAuthorSchema)
+    @jwt_required()
     def put(self, data, id):
         """Update todo by ID"""
-        todo = db.get_or_404(Todo, id)
+        current_user_id = int(get_jwt_identity())
+        todo = Todo.query.filter_by(id=id, user_id=current_user_id).first_or_404()
         for key, value in data.items():
             setattr(todo, key, value)
         db.session.commit()
         return todo
 
     @todos_bp.response(204)
+    @jwt_required()
     def delete(self, id):
         """Delete todo by ID"""
-        todo = db.get_or_404(Todo, id)
+        current_user_id = int(get_jwt_identity())
+        todo = Todo.query.filter_by(id=id, user_id=current_user_id).first_or_404()
         db.session.delete(todo)
         db.session.commit()
