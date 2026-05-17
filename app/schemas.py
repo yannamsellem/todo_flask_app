@@ -29,7 +29,7 @@ class TodoSchema(ma.SQLAlchemyAutoSchema):
         load_instance = True
         include_fk = True
 
-    author = fields.Nested(UserNoTodosSchema)
+    author = fields.Nested(UserNoTodosSchema, dump_only=True)
     user_id = fields.Integer(dump_only=True)
 
 
@@ -40,7 +40,7 @@ class UserSchema(ma.SQLAlchemyAutoSchema):
         exclude = ("password_hash",)
 
     password = fields.String(load_only=True, required=True)
-    todos = fields.Nested(TodoNoAuthorSchema, many=True)
+    todos = fields.Nested(TodoNoAuthorSchema, many=True, dump_only=True)
 
 
 class LoginSchema(Schema):

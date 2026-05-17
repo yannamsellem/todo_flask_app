@@ -1,3 +1,5 @@
+import warnings
+
 from flask import Flask
 from flask_jwt_extended import JWTManager
 from flask_marshmallow import Marshmallow
@@ -14,6 +16,16 @@ jwt = JWTManager()
 
 
 def create_app(config_class=Config):
+    # Suppress apispec warnings about multiple schemas with the same name.
+    # This is a known noise issue when using multiple variations of the same model schema.
+    # Apispec handles this internally by modifying the name.
+    warnings.filterwarnings(
+        "ignore",
+        message="Multiple schemas resolved to the name.*",
+        category=UserWarning,
+        module="apispec.ext.marshmallow.openapi",
+    )
+
     app = Flask(__name__)
     app.config.from_object(config_class)
 

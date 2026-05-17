@@ -1,42 +1,39 @@
-from flask.views import MethodView
-from marshmallow import Schema, fields
-from flask_jwt_extended import jwt_required, get_jwt_identity
-from sqlalchemy.orm import joinedload
 from flask import jsonify
+from flask.views import MethodView
+from flask_jwt_extended import get_jwt_identity, jwt_required
+from marshmallow import Schema, fields
+from sqlalchemy.orm import joinedload
 
 from app import db
 from app.models import Todo
-from app.schemas import TodoSchema, TodoNoAuthorSchema
+from app.schemas import TodoNoAuthorSchema, TodoSchema
+
 from . import todos_bp
 
-class TodoQueryArgsSchema(Schema):
-    user_id = fields.Integer()
-    completed = fields.String()
-    sort = fields.String(load_default='created_at')
-    order = fields.String(load_default='desc')
-    extend = fields.String()
-    page = fields.Integer(load_default=1)
-    page_size = fields.Integer(load_default=10)
 
-@todos_bp.route('/<int:id>')
+class TodoQueryArgsSchema(Schema):
+    extend = fields.String()
+
+
+@todos_bp.route("/<int:id>")
 class TodoById(MethodView):
-    @todos_bp.arguments(TodoQueryArgsSchema, location='query')
+    @todos_bp.arguments(TodoQueryArgsSchema, location="query")
     @todos_bp.response(200, TodoSchema)
     @jwt_required()
     def get(self, query_args, id):
         """Get todo by ID"""
         current_user_id = int(get_jwt_identity())
-        extend = query_args.get('extend')
+        extend = query_args.get("extend")
         query = Todo.query.filter_by(id=id, user_id=current_user_id)
-        
-        if extend == 'author':
+
+        if extend == "author":
             query = query.options(joinedload(Todo.author))
-        
+
         todo = query.first_or_404()
-            
-        if extend == 'author':
+
+        if extend == "author":
             return todo
-            
+
         return jsonify(TodoNoAuthorSchema().dump(todo))
 
     @todos_bp.arguments(TodoSchema(partial=True, load_instance=False))
