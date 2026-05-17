@@ -1,21 +1,31 @@
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from typing import List, Optional
+
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import String, Integer, Text, Boolean, DateTime, ForeignKey
+from werkzeug.security import check_password_hash, generate_password_hash
+
 from app import db
 
-from werkzeug.security import generate_password_hash, check_password_hash
 
 class User(db.Model):
-    __tablename__ = 'users'
-    
+    __tablename__ = "users"
+
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    username: Mapped[str] = mapped_column(String(64), index=True, unique=True, nullable=False)
-    email: Mapped[str] = mapped_column(String(120), index=True, unique=True, nullable=False)
+    username: Mapped[str] = mapped_column(
+        String(64), index=True, unique=True, nullable=False
+    )
+    email: Mapped[str] = mapped_column(
+        String(120), index=True, unique=True, nullable=False
+    )
     password_hash: Mapped[str] = mapped_column(String(256), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
-    
-    todos: Mapped[List["Todo"]] = relationship("Todo", back_populates="author", cascade="all, delete-orphan")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC)
+    )
+
+    todos: Mapped[List["Todo"]] = relationship(
+        "Todo", back_populates="author", cascade="all, delete-orphan"
+    )
 
     def set_password(self, password: str) -> None:
         self.password_hash = generate_password_hash(password)
@@ -24,20 +34,27 @@ class User(db.Model):
         return check_password_hash(self.password_hash, password)
 
     def __repr__(self) -> str:
-        return f'<User {self.username}>'
+        return f"<User {self.username}>"
+
 
 class Todo(db.Model):
-    __tablename__ = 'todos'
-    
+    __tablename__ = "todos"
+
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     title: Mapped[str] = mapped_column(String(140), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text)
     completed: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey('users.id'), nullable=False)
-    
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id"), nullable=False
+    )
+
     author: Mapped["User"] = relationship("User", back_populates="todos")
 
     def __repr__(self) -> str:
-        return f'<Todo {self.title}>'
+        return f"<Todo {self.title}>"

@@ -1,14 +1,13 @@
 from flask.views import MethodView
-from flask_smorest import Blueprint, abort
-from flask_jwt_extended import jwt_required, get_jwt_identity
-from app import db
-from app.models import Todo, User
-from app.schemas import TodoSchema, TodoNoAuthorSchema
-from sqlalchemy.orm import joinedload
 from marshmallow import Schema, fields
+from flask_jwt_extended import jwt_required, get_jwt_identity
+from sqlalchemy.orm import joinedload
 from flask import jsonify
 
-todos_bp = Blueprint('todos', __name__, url_prefix='/api/todos', description='Operations on todos')
+from app import db
+from app.models import Todo
+from app.schemas import TodoSchema, TodoNoAuthorSchema
+from . import todos_bp
 
 class TodoQueryArgsSchema(Schema):
     user_id = fields.Integer()
@@ -80,45 +79,3 @@ class Todos(MethodView):
         db.session.add(new_todo)
         db.session.commit()
         return new_todo
-
-@todos_bp.route('/<int:id>')
-class TodoById(MethodView):
-    @todos_bp.arguments(TodoQueryArgsSchema, location='query')
-    @todos_bp.response(200, TodoSchema)
-    @jwt_required()
-    def get(self, query_args, id):
-        """Get todo by ID"""
-        current_user_id = int(get_jwt_identity())
-        extend = query_args.get('extend')
-        query = Todo.query.filter_by(id=id, user_id=current_user_id)
-        
-        if extend == 'author':
-            query = query.options(joinedload(Todo.author))
-        
-        todo = query.first_or_404()
-            
-        if extend == 'author':
-            return todo
-            
-        return jsonify(TodoNoAuthorSchema().dump(todo))
-
-    @todos_bp.arguments(TodoSchema(partial=True, load_instance=False))
-    @todos_bp.response(200, TodoNoAuthorSchema)
-    @jwt_required()
-    def put(self, data, id):
-        """Update todo by ID"""
-        current_user_id = int(get_jwt_identity())
-        todo = Todo.query.filter_by(id=id, user_id=current_user_id).first_or_404()
-        for key, value in data.items():
-            setattr(todo, key, value)
-        db.session.commit()
-        return todo
-
-    @todos_bp.response(204)
-    @jwt_required()
-    def delete(self, id):
-        """Delete todo by ID"""
-        current_user_id = int(get_jwt_identity())
-        todo = Todo.query.filter_by(id=id, user_id=current_user_id).first_or_404()
-        db.session.delete(todo)
-        db.session.commit()

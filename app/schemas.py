@@ -1,6 +1,8 @@
-from app import ma
-from app.models import User, Todo
 from marshmallow import Schema, fields
+
+from app import ma
+from app.models import Todo, User
+
 
 class TodoNoAuthorSchema(ma.SQLAlchemyAutoSchema):
     class Meta:
@@ -8,38 +10,43 @@ class TodoNoAuthorSchema(ma.SQLAlchemyAutoSchema):
         load_instance = True
         include_fk = True
         exclude = ("author",)
-    
+
     user_id = fields.Integer(dump_only=True)
+
 
 class UserNoTodosSchema(ma.SQLAlchemyAutoSchema):
     class Meta:
         model = User
         load_instance = True
         exclude = ("todos", "password_hash")
-    
+
     password = fields.String(load_only=True, required=True)
+
 
 class TodoSchema(ma.SQLAlchemyAutoSchema):
     class Meta:
         model = Todo
         load_instance = True
         include_fk = True
-    
+
     author = fields.Nested(UserNoTodosSchema)
     user_id = fields.Integer(dump_only=True)
+
 
 class UserSchema(ma.SQLAlchemyAutoSchema):
     class Meta:
         model = User
         load_instance = True
         exclude = ("password_hash",)
-    
+
     password = fields.String(load_only=True, required=True)
     todos = fields.Nested(TodoNoAuthorSchema, many=True)
+
 
 class LoginSchema(Schema):
     username = fields.String(required=True)
     password = fields.String(required=True)
+
 
 # Pre-initialized schemas for convenience
 user_schema = UserSchema()
