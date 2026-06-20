@@ -2,23 +2,18 @@ import warnings
 
 from flask import Flask
 from flask_jwt_extended import JWTManager
-from flask_marshmallow import Marshmallow
 from flask_migrate import Migrate
 from flask_smorest import Api
-from flask_sqlalchemy import SQLAlchemy
 
+from app.shared.infrastructure.database import db
 from config import Config
 
-db = SQLAlchemy()
 migrate = Migrate()
-ma = Marshmallow()
 jwt = JWTManager()
 
 
 def create_app(config_class=Config):
-    # Suppress apispec warnings about multiple schemas with the same name.
-    # This is a known noise issue when using multiple variations of the same model schema.
-    # Apispec handles this internally by modifying the name.
+    # Suppress apispec warnings
     warnings.filterwarnings(
         "ignore",
         message="Multiple schemas resolved to the name.*",
@@ -29,19 +24,26 @@ def create_app(config_class=Config):
     app = Flask(__name__)
     app.config.from_object(config_class)
 
+    # Import models to ensure they are registered with Base.metadata
+    from app.shared.infrastructure import all_models
+
     db.init_app(app)
     migrate.init_app(app, db)
-    ma.init_app(app)
     jwt.init_app(app)
 
     api = Api(app)
 
-    from app.routes.auth import auth_bp
-    from app.routes.todos import todos_bp
-    from app.routes.users import users_bp
+    # Configure API prefix if needed, or rely on blueprints.
+    # To match previous behavior where tests use /api/auth/register,
+    # we can either add /api to each blueprint or use a wrapper.
+    # Let's check how flask-smorest handles it.
 
-    api.register_blueprint(auth_bp)
-    api.register_blueprint(users_bp)
-    api.register_blueprint(todos_bp)
+    from app.modules.identity.presentation.routes import auth_bp, users_bp
+    from app.modules.task_management.presentation.routes import todos_bp
+
+    # Prefixing blueprints with /api to maintain compatibility
+    api.register_blueprint(auth_bp, url_prefix="/api/auth")
+    api.register_blueprint(users_bp, url_prefix="/api/users")
+    api.register_blueprint(todos_bp, url_prefix="/api/todos")
 
     return app
